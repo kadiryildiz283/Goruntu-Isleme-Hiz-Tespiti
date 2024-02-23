@@ -1,0 +1,45 @@
+import math
+import numpy as np
+
+# Frame başına x,y kordinatları ve sol alt-sağ üst nokta uzaklıkları
+coordinates = np.array([[[113., 231.], [112.83630458, 230.73530376], 0.264],
+                        [[114., 232.], [113.83630458, 231.73530376], 0.265],
+                        [[115., 233.], [114.83630458, 232.73530376], 0.266],
+                        [[116., 234.], [115.83630458, 233.73530376], 0.267]])
+
+# Frame arasındaki zaman farkı (saniye)
+time_diff = 0.1
+
+# Arabanın hızını tutacak liste
+speeds = []
+
+# Her frame için hız hesapla
+for i in range(len(coordinates) - 1):
+  # Frame başına x,y kordinatlarını al
+  x1, y1 = coordinates[i][0]
+  x2, y2 = coordinates[i+1][0]
+
+  # Frame başına sol alt-sağ üst nokta uzaklıklarını al
+  d1 = coordinates[i][2]
+  d2 = coordinates[i+1][2]
+
+  # Uzaklık oranını hesapla
+  ratio = d2 / d1
+
+  # Uzaklık oranına göre x,y kordinatlarını ölçekle
+  x2 = x1 + (x2 - x1) * ratio
+  y2 = y1 + (y2 - y1) * ratio
+
+  # Ölçeklenmiş kordinatlar arasındaki mesafeyi hesapla
+  distance = math.sqrt((x2 - x1)**2 + (y2 - y1)**2)
+
+  # Mesafe ve zaman farkına göre hızı hesapla
+  speed = distance / time_diff
+
+  # Hızı listeye ekle
+  speeds.append(speed)
+
+# Hız listesini yazdır
+print(speeds)
+
+km/s = px/s * pikselbaşınametre * 0.0001
