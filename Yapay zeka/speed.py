@@ -101,7 +101,7 @@ while True:
                gercektekimesafe = 2/(x4 - x3)
                gercektekimesafe2 = 1.4/(y4-y3)
                elapsed_time = curr_time - pt # saniye cinsinden
-               pxhiz = ((distance * elapsed_time) / oran)
+               pxhiz = distance * elapsed_time
                reelhiz = math.sqrt((pxhiz/gercektekimesafe))
                print(id, cx,cy,px,py)
                a = input("sadsda")
