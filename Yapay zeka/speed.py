@@ -2,254 +2,244 @@ import cv2
 import pandas as pd
 import numpy as np
 from ultralytics import YOLO
-# tracker.py dosyasının aynı dizinde olduğundan emin ol
-from tracker import Tracker # Varsa kendi takipçi dosyanız
-# Eğer tracker.py yoksa ve basit bir takipçi isterseniz,
-# OpenCV'nin veya başka kütüphanelerin takipçilerini kullanmanız gerekebilir.
-# Bu kodda tracker.py'nin var olduğu varsayılmıştır.
+import supervision as sv # ByteTrack ve diğer yardımcı fonksiyonlar için
 import math
 import time
+from collections import defaultdict, deque # Önceki koordinatları saklamak için
 
 # --- Ayarlar ---
-VIDEO_PATH = '8.mp4' # Video dosyanızın yolu
-YOLO_MODEL = 'yolov8s.pt' # Kullanılacak YOLO modeli
-COCO_FILE = 'coco.txt' # COCO sınıf isimleri dosyası
-FRAME_PROCESS_INTERVAL = 3 # Her X karede bir işlem yap (performans için)
-TARGET_CLASSES = ['car', 'truck', 'bus'] # Takip edilecek sınıflar
+VIDEO_PATH = '8.mp4' # Video dosyanızın yolu (Makaledeki gibi bir test videosu)
+YOLO_MODEL = 'yolov8x.pt' # Makalede kullanılan model [1]
+# COCO_FILE = 'coco.txt' # Supervision genellikle sınıf isimlerini modelden alır
+FRAME_PROCESS_INTERVAL = 1 # Her karede işlem yap (Daha hassas zamanlama için, gerekirse artırılabilir)
+TARGET_CLASSES_IDX = [1, 2, 3] # Takip edilecek COCO sınıf indeksleri (car: 2, bus: 5, truck: 7)
 
-# --- Deneysel Hız Tahmini Ayarları ---
+# --- Deneysel Hız Tahmini Ayarları (Makaledeki gibi) ---
 # Bu değerler TAHMİNİDİR ve sahneye/videoya göre ayarlanması GEREKİR!
-ASSUMED_CAR_WIDTH_METERS = 1.8 # Ortalama bir araba genişliği (metre)
+ASSUMED_CAR_WIDTH_METERS = 1.8 # Ortalama bir araba genişliği (metre) [6]
 
-# Köşegen değişimine göre uzaklık ayarlama faktörleri (ÇOK DENEYSEL!)
+# Köşegen değişimine göre uzaklık ayarlama faktörleri (ÇOK DENEYSEL!) [4]
 # Eşik değerleri (piksel/saniye cinsinden köşegen değişim hızı)
-DIAG_RATE_THRESHOLD_NEAR = -40 # Hızlı küçülme eşiği (yakınlaşıyor olabilir) - Daha negatif
-DIAG_RATE_THRESHOLD_FAR = -5   # Yavaş küçülme eşiği (uzaklaşıyor olabilir) - Sıfıra yakın negatif
+# Not: Orijinal kodunuzdaki eşikler negatif. Makaledeki mantık genellikle
+# uzaklaşırken küçülme (negatif oran), yaklaşırken büyüme (pozitif oran) üzerinedir.
+# Eşikleri ve faktörleri makaledeki mantığa ve kendi gözlemlerinize göre ayarlayın.
+# Aşağıdaki değerler örnek amaçlıdır ve orijinal kodunuzdakilere benzerdir.
+DIAG_RATE_THRESHOLD_NEAR = 50 # Hızlı büyüme eşiği (yakınlaşıyor olabilir) - Pozitif
+DIAG_RATE_THRESHOLD_FAR = -10 # Yavaş küçülme/az büyüme eşiği (uzaklaşıyor olabilir) - Negatif/Küçük Pozitif
 # Ayarlama Çarpanları
-ADJUST_FACTOR_FAR = 1.8     # Uzaktaysa (yavaş küçülüyorsa) hızı artır
-ADJUST_FACTOR_NEAR = 0.7    # Yakındaysa (hızlı küçülüyorsa) hızı azalt
-# Not: Pozitif değişim (büyüme) veya sıfıra çok yakın değişim için faktör 1.0 olacak
+ADJUST_FACTOR_FAR = 1.8     # Uzaktaysa (yavaş değişiyorsa/küçülüyorsa) hızı artır
+ADJUST_FACTOR_NEAR = 0.7    # Yakındaysa (hızlı büyüyorsa) hızı azalt
 # -------------------------------------
 
-model = YOLO(YOLO_MODEL)
-cap = cv2.VideoCapture(VIDEO_PATH)
+# YOLO modelini yükle
+try:
+    model = YOLO(YOLO_MODEL)
+except Exception as e:
+    print(f"Hata: YOLO modeli yüklenemedi ({YOLO_MODEL}). Hata: {e}")
+    exit()
 
-# Video FPS'ini al
+# Video yakalamayı başlat
+cap = cv2.VideoCapture(VIDEO_PATH)
+if not cap.isOpened():
+    print(f"Hata: Video dosyası açılamadı ({VIDEO_PATH}).")
+    exit()
+
+# Video bilgilerini al
 fps = cap.get(cv2.CAP_PROP_FPS)
 if fps == 0:
     print("Uyarı: Video FPS değeri alınamadı. Varsayılan 30 kullanılıyor.")
     fps = 30
+frame_width = int(cap.get(cv2.CAP_PROP_FRAME_WIDTH))
+frame_height = int(cap.get(cv2.CAP_PROP_FRAME_HEIGHT))
 
-# Kareler arası zaman (saniye cinsinden)
-frame_time_sec = FRAME_PROCESS_INTERVAL / fps
+# Kareler arası zaman (saniye cinsinden) - Her kare işleneceği için
+frame_time_sec = 1 / fps
 
-try:
-    with open(COCO_FILE, "r") as my_file:
-        data = my_file.read()
-        class_list = data.split("\n")
-except FileNotFoundError:
-    print(f"Hata: {COCO_FILE} dosyası bulunamadı.")
-    exit()
+# ByteTrack takipçisini başlat [4]
+# Supervision'ın ByteTrack'i genellikle varsayılan parametrelerle iyi çalışır
+# track_thresh: Yüksek güvenli eşik, track_buffer: Kayıp kare toleransı, match_thresh: Eşleştirme eşiği
+byte_tracker = sv.ByteTrack(frame_rate=fps, track_thresh=0.5, track_buffer=30, match_thresh=0.8)
 
-count = 0
-try:
-    tracker = Tracker()
-except NameError:
-    print("Hata: Tracker sınıfı bulunamadı. tracker.py dosyasının olduğundan emin olun veya başka bir takipçi kullanın.")
-    exit()
-
+# Yardımcı Supervision annotator'ları (isteğe bağlı, görselleştirme için)
+bounding_box_annotator = sv.BoundingBoxAnnotator(thickness=2)
+label_annotator = sv.LabelAnnotator(text_thickness=1, text_scale=0.5, text_color=sv.Color.BLACK)
 
 # Araçların önceki PİKSEL konumlarını, zamanlarını ve KÖŞEGENLERİNİ saklamak için
-prev_pixel_coords = {}
-prev_time_stamp = {}
-prev_bbox_diag = {} # Önceki köşegen uzunluğunu saklamak için
+# defaultdict kullanarak anahtar yoksa otomatik boş deque oluştur
+prev_pixel_coords = defaultdict(lambda: deque(maxlen=2)) # Sadece son 2 konumu tut yeterli
+prev_time_stamp = defaultdict(lambda: deque(maxlen=2)) # Sadece son 2 zamanı tut yeterli
+prev_bbox_diag = defaultdict(lambda: deque(maxlen=2)) # Sadece son 2 köşegeni tut yeterli
+
+frame_count = 0
 
 while True:
     ret, frame = cap.read()
     if not ret:
+        print("Video bitti veya okuma hatası.")
         break
 
+    frame_count += 1
+    # FRAME_PROCESS_INTERVAL artık 1 olduğu için bu kontrol gereksiz, ama isterseniz ekleyebilirsiniz
+    # if frame_count % FRAME_PROCESS_INTERVAL!= 0:
+    #     continue
+
     # Zaman damgası
-    current_time_sec = count / fps
+    current_time_sec = frame_count / fps
 
-    count += 1
-    if count % FRAME_PROCESS_INTERVAL != 0:
-        continue
+    # YOLOv8 ile nesne tespiti yap [4, 1]
+    results = model(frame, verbose=False) # verbose=False sessiz mod
 
-    frame = cv2.resize(frame, (1020, 500))
-    original_frame = frame.copy()
+    # Supervision Detections formatına dönüştür
+    detections = sv.Detections.from_ultralytics(results)
 
-    results = model.predict(frame, verbose=False) # verbose=False sessiz mod
-    a = results[0].boxes.data.cpu()
-    px = pd.DataFrame(a.numpy()).astype("float")
+    # Sadece hedef sınıfları filtrele (car, truck, bus)
+    detections = detections
 
-    detections = []
-    conf_threshold = 0.4 # Güven eşiğini ayarlayabilirsiniz
-    for index, row in px.iterrows():
-        conf = float(row[4])
-        if conf < conf_threshold:
-            continue
+    # ByteTrack ile takip et [4, 1]
+    # Detections nesnesini tracker_id özelliği ile günceller
+    detections = byte_tracker.update_with_detections(detections)
 
-        x1, y1, x2, y2 = int(row[0]), int(row[1]), int(row[2]), int(row[3])
-        d = int(row[5])
-        # Sınıf indeksinin geçerli olup olmadığını kontrol et
-        if 0 <= d < len(class_list):
-             c = class_list[d]
-             if any(target in c for target in TARGET_CLASSES):
-                 detections.append([x1, y1, x2, y2])
-        else:
-            # print(f"Uyarı: Geçersiz sınıf indeksi {d}")
-            pass
+    # Hızları ve etiketleri hazırlamak için listeler
+    labels =
+    current_speeds_kmh = {} # Anlık hızları saklamak için
 
-    bbox_id = tracker.update(detections)
-    current_speeds = {}
+    # Takip edilen her araç için hız hesapla
+    for detection_idx in range(len(detections)):
+        # Supervision Detections'dan bilgileri al
+        xyxy = detections.xyxy[detection_idx]
+        confidence = detections.confidence[detection_idx]
+        class_id = detections.class_id[detection_idx]
+        tracker_id = detections.tracker_id[detection_idx]
 
-    for bbox in bbox_id:
-        x3, y3, x4, y4, id = bbox
-        x3, y3, x4, y4 = int(x3), int(y3), int(x4), int(y4) # Tam sayıya çevir
+        # Sınırlayıcı kutu koordinatları
+        x1, y1, x2, y2 = int(xyxy), int(xyxy[4]), int(xyxy[1]), int(xyxy[5])
 
-        # Referans noktası (alt-orta) - Piksel koordinatları
-        cx_pixel = int(x3 + x4) // 2
-        cy_pixel = int(y4)
+        # Referans noktası (alt-orta) - Piksel koordinatları (Makaledeki gibi)
+        cx_pixel = (x1 + x2) // 2
+        cy_pixel = y2
         current_pixel_coord = (cx_pixel, cy_pixel)
 
         # 1. Köşegen Uzaklığını Hesapla
-        bbox_width_pixels = x4 - x3
-        bbox_height_pixels = y4 - y3
+        bbox_width_pixels = x2 - x1
+        bbox_height_pixels = y2 - y1
         bbox_diag = 0
         if bbox_width_pixels > 0 and bbox_height_pixels > 0:
             bbox_diag = math.sqrt(bbox_width_pixels**2 + bbox_height_pixels**2)
 
+        # Mevcut zamanı ve konumu kaydet
+        prev_pixel_coords[tracker_id].append(current_pixel_coord)
+        prev_time_stamp[tracker_id].append(current_time_sec)
+        if bbox_diag > 0:
+            prev_bbox_diag[tracker_id].append(bbox_diag)
+        else:
+            # Eğer köşegen 0 ise, önceki geçerli köşegeni tekrar ekle (oran hesaplaması için)
+            if len(prev_bbox_diag[tracker_id]) > 0:
+                prev_bbox_diag[tracker_id].append(prev_bbox_diag[tracker_id][-1])
+            else:
+                 prev_bbox_diag[tracker_id].append(0) # İlk kare ise 0 ekle
+
+
         speed_kmh = 0 # Varsayılan hız
-        scale_factor_m_per_pix = 0 # Tahmini ölçek (metre/piksel)
-        movement_angle_deg = -1 # Hareket açısı
         distance_adjustment_factor = 1.0 # Uzaklık ayar faktörü
 
-        # Eğer bu araç daha önce takip edildiyse hızını hesapla
-        if id in prev_pixel_coords and id in prev_time_stamp:
-            prev_coord_pix = prev_pixel_coords[id]
-            prev_time = prev_time_stamp[id]
+        # Eğer bu araç için yeterli geçmiş veri varsa (en az 2 nokta) hızını hesapla
+        if len(prev_pixel_coords[tracker_id]) >= 2 and len(prev_time_stamp[tracker_id]) >= 2:
+            # Önceki ve mevcut koordinatları/zamanları al
+            prev_coord_pix = prev_pixel_coords[tracker_id]
+            curr_coord_pix = prev_pixel_coords[tracker_id][4]
+            prev_time = prev_time_stamp[tracker_id]
+            curr_time = prev_time_stamp[tracker_id][4]
 
             # Geçen süreyi hesapla (saniye)
-            elapsed_time = current_time_sec - prev_time
-            # VEYA sabit kare işleme aralığı kullan:
+            elapsed_time = curr_time - prev_time
+            # VEYA sabit kare işleme aralığı kullan (eğer FRAME_PROCESS_INTERVAL > 1 ise):
             # elapsed_time = frame_time_sec
 
-            if elapsed_time > 0:
-                # Piksel cinsinden mesafeyi hesapla
-                pixel_distance = math.dist(prev_coord_pix, current_pixel_coord)
+            if elapsed_time > 1e-6: # Çok küçük zaman farklarını veya sıfırı engelle
+                # Piksel cinsinden mesafeyi hesapla [7]
+                pixel_distance = math.dist(prev_coord_pix, curr_coord_pix)
 
-                # Piksel cinsinden hızı hesapla (piksel/s)
+                # Piksel cinsinden hızı hesapla (piksel/s) [4]
                 speed_pixels_per_sec = pixel_distance / elapsed_time
 
-                # 2. Hareket Açısını Hesapla
-                delta_x = current_pixel_coord[0] - prev_coord_pix[0]
-                delta_y = current_pixel_coord[1] - prev_coord_pix[1] # Y aşağı doğru pozitif
-                if abs(delta_x) > 0.5 or abs(delta_y) > 0.5: # Sadece küçük hareketleri filtrele
-                    movement_angle_rad = math.atan2(-delta_y, delta_x) # Kartezyen açı için -delta_y
-                    movement_angle_deg = math.degrees(movement_angle_rad)
-                    if movement_angle_deg < 0:
-                        movement_angle_deg += 360
-                else:
-                    movement_angle_deg = -1 # Açı hesaplanamadı (veya araç duruyor)
-
-
-                # 3. Ölçek Faktörü (Genişlik & Açı ile Metre/Piksel Tahmini)
+                # 2. Gerçek Dünya Hızı Tahmini (Varsayılan Genişlik ile) [4, 6]
+                scale_factor_m_per_pix = 0
                 if bbox_width_pixels > 0:
-                    corrected_bbox_width = bbox_width_pixels # Varsayılan
-                    if movement_angle_deg != -1:
-                        # Açıya göre düzeltme faktörü (90 derecede 1, 0/180'de 0'a yakın)
-                        # abs(açı - 90) -> 90 dereceden sapma
-                        angle_diff_from_90 = abs(movement_angle_deg - 90)
-                        # Eğer 180'den büyükse diğer taraftan sapma (örn 270 için de 90)
-                        if angle_diff_from_90 > 90:
-                            angle_diff_from_90 = 180 - angle_diff_from_90
-
-                        # Kosinüs fonksiyonu (0 derecede 1, 90 derecede 0)
-                        # Sapma 0 iken (açı 90) faktör 1, sapma 90 iken (açı 0/180) faktör 0
-                        angle_correction_factor = math.cos(math.radians(angle_diff_from_90))
-
-                        # Çok küçük faktörleri engelle (örn. tam yatay gidince genişlik 0 olmasın)
-                        min_factor = 0.1
-                        angle_correction_factor = max(min_factor, angle_correction_factor)
-
-                        corrected_bbox_width = bbox_width_pixels * angle_correction_factor
-                    else:
-                        # Açı hesaplanamadıysa düzeltme yapma
-                        angle_correction_factor = 1.0 # Göstermek için
-
-                    if corrected_bbox_width > 0:
-                         # Ölçek faktörünü hesapla (m/piksel)
-                         scale_factor_m_per_pix = ASSUMED_CAR_WIDTH_METERS / corrected_bbox_width
-                    else:
-                         scale_factor_m_per_pix = 0 # Hesaplama başarısız
+                    # Makalede açı düzeltmesi belirtilmediği için kullanmıyoruz
+                    scale_factor_m_per_pix = ASSUMED_CAR_WIDTH_METERS / bbox_width_pixels
                 else:
                     scale_factor_m_per_pix = 0 # Hesaplama başarısız
 
-
-                # --- İlk Hız Tahmini ---
+                # --- İlk Hız Tahmini (m/s) ---
                 speed_mps_initial = 0
                 if scale_factor_m_per_pix > 0:
                     speed_mps_initial = speed_pixels_per_sec * scale_factor_m_per_pix
 
+                # 3. Deneysel Uzaklık Ayarı (Köşegen Değişimi ile) [4]
+                if len(prev_bbox_diag[tracker_id]) >= 2:
+                    prev_diag = prev_bbox_diag[tracker_id]
+                    curr_diag = prev_bbox_diag[tracker_id][4]
 
-                # 4. Uzaklık Ayarı (Köşegen Değişimi ile - DENEYSEL)
-                if id in prev_bbox_diag:
-                    prev_diag = prev_bbox_diag[id]
-                    if prev_diag > 0 and bbox_diag > 0: # Geçerli köşegen değerleri varsa
-                        diag_change = bbox_diag - prev_diag
+                    if prev_diag > 0 and curr_diag > 0: # Geçerli köşegen değerleri varsa
+                        diag_change = curr_diag - prev_diag
                         diag_change_rate = diag_change / elapsed_time # piksel/saniye
 
-                        # Kaba eşiklere göre ayarlama faktörünü belirle
-                        if diag_change_rate < DIAG_RATE_THRESHOLD_NEAR: # Hızlı küçülüyor -> Yakın
+                        # Eşiklere göre ayarlama faktörünü belirle
+                        if diag_change_rate > DIAG_RATE_THRESHOLD_NEAR: # Hızlı büyüyor -> Yakın
                             distance_adjustment_factor = ADJUST_FACTOR_NEAR
-                        elif diag_change_rate < DIAG_RATE_THRESHOLD_FAR: # Yavaş küçülüyor -> Uzak
+                        elif diag_change_rate < DIAG_RATE_THRESHOLD_FAR: # Küçülüyor/Yavaş büyüyor -> Uzak
                             distance_adjustment_factor = ADJUST_FACTOR_FAR
-                        # Diğer durumlar için (büyüyor veya az değişiyor) faktör 1.0 kalır
+                        # Diğer durumlar için (orta hızda büyüme) faktör 1.0 kalır
 
-                        # print(f"ID: {id}, Diag Rate: {diag_change_rate:.1f}, Adj Factor: {distance_adjustment_factor}") # Debug
+                        # print(f"ID: {tracker_id}, Diag Rate: {diag_change_rate:.1f}, Adj Factor: {distance_adjustment_factor}") # Debug
+                    else:
+                        # Geçerli köşegen yoksa ayarlama yapma
+                        distance_adjustment_factor = 1.0
                 else:
-                    # Önceki köşegen yoksa ayarlama yapma
-                    distance_adjustment_factor = 1.0
+                     # Yeterli köşegen geçmişi yoksa ayarlama yapma
+                     distance_adjustment_factor = 1.0
 
-
-                # --- Nihai Hız Hesabı ---
+                # --- Nihai Hız Hesabı (km/h) ---
                 speed_mps_final = speed_mps_initial * distance_adjustment_factor
                 speed_kmh = speed_mps_final * 3.6
 
-                # Mantıksız hızları filtrele
+                # Mantıksız hızları filtrele (isteğe bağlı)
                 if speed_kmh < 0: speed_kmh = 0
-                if speed_kmh > 200: speed_kmh = 0 # Veya başka bir üst limit
+                if speed_kmh > 180: speed_kmh = 0 # Makul bir üst limit
+
+                current_speeds_kmh[tracker_id] = speed_kmh # Hızı sakla
+
+        # Görselleştirme için etiket oluştur
+        label = f"ID:{tracker_id}"
+        if tracker_id in current_speeds_kmh and current_speeds_kmh[tracker_id] > 0:
+            label += f" {int(current_speeds_kmh[tracker_id])}km/h"
+        # label += f" D:{int(bbox_diag)}" # İsteğe bağlı: Köşegeni göster
+        # label += f" A:{distance_adjustment_factor:.1f}" # İsteğe bağlı: Ayar faktörünü göster
+        labels.append(label)
+
+        # Referans noktasını çiz (isteğe bağlı)
+        cv2.circle(frame, (cx_pixel, cy_pixel), 3, (0, 255, 0), -1)
+
+    # Supervision ile kare üzerine çizimleri yap
+    annotated_frame = bounding_box_annotator.annotate(
+        scene=frame.copy(),
+        detections=detections
+    )
+    annotated_frame = label_annotator.annotate(
+        scene=annotated_frame,
+        detections=detections,
+        labels=labels
+    )
+
+    # FPS bilgisini ekle (isteğe bağlı)
+    processing_time = (time.time() - (frame_count / fps)) # Yaklaşık işlem süresi
+    current_fps = 1.0 / (frame_time_sec + processing_time) if (frame_time_sec + processing_time) > 0 else fps
+    cv2.putText(annotated_frame, f"FPS: {current_fps:.1f}", (10, 30), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 0, 255), 2)
 
 
-        # Mevcut durumu sonraki kare için sakla
-        prev_pixel_coords[id] = current_pixel_coord
-        prev_time_stamp[id] = current_time_sec
-        if bbox_diag > 0: # Sadece geçerli köşegen varsa sakla
-             prev_bbox_diag[id] = bbox_diag
+    cv2.imshow("Hız Tahmini (YOLOv8 + ByteTrack + Deneysel Ayar)", annotated_frame)
 
-
-        # --- Çizimler ---
-        cv2.rectangle(frame, (x3, y3), (x4, y4), (0, 0, 255), 2)
-        label_id = f"ID: {id}"
-        label_speed = ""
-        if speed_kmh > 0:
-            label_speed = f"{int(speed_kmh)} km/h"
-        label_diag = f" D:{int(bbox_diag)}" if bbox_diag > 0 else ""
-        # label_angle = f" A:{int(movement_angle_deg)}" if movement_angle_deg != -1 else ""
-        # label_adj = f"Adj:{distance_adjustment_factor:.1f}" # Ayarlama faktörünü göster
-
-        cv2.putText(frame, label_id, (x3, y3 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 255), 1)
-        cv2.putText(frame, label_speed, (x3, y3 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.6, (0, 255, 0), 2)
-        cv2.putText(frame, label_diag, (x3 + 50, y3 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        # cv2.putText(frame, label_angle, (x3 + 100, y3 - 25), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 0, 0), 1)
-        # cv2.putText(frame, label_adj, (x3 + 100, y3 - 5), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 0, 255), 1)
-
-        cv2.circle(frame, (cx_pixel, cy_pixel), 3, (0, 255, 0), -1) # Merkez nokta
-
-    cv2.imshow("Hız Tahmini (Deneysel V2)", frame)
-
-    if cv2.waitKey(1) & 0xFF == 27:
+    if cv2.waitKey(1) & 0xFF == 27: # ESC tuşuna basılınca çık
         break
 
 cap.release()
