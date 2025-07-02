@@ -6,11 +6,11 @@ import sys
 
 # --- Ayarlar Bölümü ---
 # 1. Kalibrasyon için kullanılacak resim
-CALIBRATION_IMAGE_PATH = '80CM.png' 
+CALIBRATION_IMAGE_PATH = '114cm.png' 
 
 # 2. 3D konumu ve yer değiştirmesi hesaplanacak resimler
-RESIM_1_YOL = '80CM.png'      # Topun ilk konumu
-RESIM_2_YOL = 'deneme1.png' # Topun ikinci konumu
+RESIM_1_YOL = '114cm.png'      # Topun ilk konumu
+RESIM_2_YOL = './100cmuzak.png' # Topun ikinci konumu
 
 # 3. Genel Ayarlar
 BALL_DIAMETER_CM = 19.0 # Topun gerçek çapı (cm)
