@@ -97,6 +97,7 @@ ignore = [
 "tests/**/*.py" = ["S101", "ARG001", "ARG002", "N802"]
 "scripts/**/*.py" = ["S101"]
 "src/vehicle_speed/cli.py" = ["B008"]
+"src/vehicle_speed/filters/**/*.py" = ["N806"]
 
 [tool.ruff.lint.isort]
 known-first-party = ["vehicle_speed"]
@@ -162,8 +163,6 @@ source = ["src/vehicle_speed"]
 omit = [
     "src/vehicle_speed/visualization.py",  # GUI excluded from headless coverage
     "src/vehicle_speed/cli.py",            # Interactive CLI entry point
-    "src/vehicle_speed/filters/*",         # Placeholder for planned modules
-    "src/vehicle_speed/nrc/*",             # Placeholder for planned modules
 ]
 
 [tool.coverage.report]
