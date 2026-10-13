@@ -1,0 +1,145 @@
+# ============================================================================
+# .gitignore — Görüntü İşleme ile Hız Tespiti
+# Referans: docs/infrastructure/06_veri_model_yonetimi/01_gitignore_lfs_veri_izlenebilirligi.md
+# ============================================================================
+
+# ===== Python =====
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+.Python
+build/
+develop-eggs/
+dist/
+downloads/
+eggs/
+.eggs/
+lib/
+lib64/
+parts/
+sdist/
+var/
+wheels/
+*.egg-info/
+.installed.cfg
+*.egg
+
+# ===== Sanal ortamlar =====
+.venv/
+venv/
+env/
+ENV/
+my_new_venv/
+env.bak/
+venv.bak/
+
+# ===== Araç önbellekleri =====
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytest_cache/
+.ruff_cache/
+.coverage
+.coverage.*
+coverage.xml
+htmlcov/
+.tox/
+.nox/
+.cache/
+*.coverprofile
+
+# ===== Dağıtım / paketleme =====
+uv.lock.bak
+*.whl
+*.tar.gz
+
+# ===== Makine öğrenmesi ağırlıkları ve deneme çıktıları =====
+*.pt
+*.pth
+*.onnx
+*.pb
+*.h5
+*.tflite
+*.safetensors
+*.ckpt
+runs/
+wandb/
+mlruns/
+models/
+
+# ===== Medya ve ham veri =====
+*.mp4
+*.mkv
+*.avi
+*.mov
+*.webm
+*.png
+*.jpg
+*.jpeg
+*.gif
+*.bmp
+*.tiff
+*.pdf
+
+# Dokümantasyon ve makale görselleri için İSTİSNALAR (depoya girer)
+!docs/**/*.png
+!docs/**/*.jpg
+!docs/**/*.jpeg
+!docs/**/*.svg
+
+# ===== Loglar ve seri telemetri kayıtları =====
+*.log
+serial.log
+/tmp/
+
+# ===== Firmware / PlatformIO =====
+firmware/.pio/
+firmware/.vscode/
+*.o
+*.obj
+*.elf
+*.map
+*.bin
+*.hex
+*.d
+
+# ===== İşletim sistemi kalıntıları =====
+.DS_Store
+.DS_Store?
+._*
+.Spotlight-V100
+.Trashes
+ehthumbs.db
+Thumbs.db
+desktop.ini
+
+# ===== Editör =====
+.idea/
+.vscode/
+*.swp
+*.swo
+*~
+.project
+.settings/
+
+# ===== Proje içi arşiv, eski çalışma alanları ve ham veriler =====
+eski/
+archive/
+fotograflar/
+"Yapay zeka/"
+data/raw/
+data/processed/
+.git.broken/
+
+# ===== Ortam ve gizli bilgiler =====
+.env
+.env.*
+!.env.example
+*.pem
+*.key
+platformio.local.ini
+firmware/platformio.local.ini
+
+# ===== Yanlışlıkla oluşmuş / yetim dosyalar =====
+,*

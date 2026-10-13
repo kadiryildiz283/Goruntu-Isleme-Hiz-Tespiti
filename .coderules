@@ -1,0 +1,133 @@
+# ============================================================================
+# Görüntü İşleme ile Hız Tespiti — Mühendislik Sözleşmesi (.coderules)
+# ============================================================================
+#
+# Bu dosya bir temenni listesi değildir; bu depoda çalışan tüm geliştiriciler
+# ve AI ajanlar için bağlayıcı MÜHENDİSLİK SÖZLEŞMESİDİR.
+#
+# TEMEL İLKELER:
+# 1. DISCOVER BEFORE CODING (Kodlamadan önce keşfet)
+# 2. EVIDENCE BEFORE ASSUMING (Varsaymadan önce kanıtla)
+# 3. METHODOLOGY BEFORE MUTATING (Değiştirmeden önce metodoloji kur)
+# 4. TEST & VERIFY AFTER MUTATING (Değiştirdikten sonra test ve doğrula)
+# 5. NEVER SACRIFICE QUALITY FOR BREVITY (Kaliteyi asla kısalık için feda etme)
+# ============================================================================
+
+## 0. KANIT DOKTRİNİ (Tüm Kuralların Üstünde)
+
+0.1. VARSAYMA. Bir dosyanın varlığını, bir fonksiyonun çıktısını, derinlik hesabının
+     veya hız türetiminin doğruluğunu TAHMİN ETME. Oku, hesapla, koş, kanıtla.
+0.2. Bir adımı "tamamlandı" ilan etmeden önce GERÇEK KANIT sun (komut çıktısı, test sonucu, exit kodu).
+     "VALIDATION: PASS" bir kanıt değildir; bir iddiadır.
+0.3. Şu üç durumu birbirinden ayır:
+     (a) Kod yazıldı / değişti
+     (b) Test geçti
+     (c) Algoritma ve fiziksel izdüşüm matematiksel olarak kanıtlandı
+     (b), (c)'yi kanıtlamaz. Bir test mock veriyle geçebilir; ancak gerçek optik/geometrik
+     durumda tekillik (singularity) veya sıfıra bölme üretebilir.
+0.4. Doğrulanmamış işi doğrulanmış gibi GÖSTERME. Kalan riski ve varsayımları açıkça beyan et.
+
+---
+
+## 1. MODÜLERLİK, TEK SORUMLULUK VE GİRDİ-ÇIKTI SÖZLEŞMESİ (SRP)
+
+1.1. HER DOSYA TEK BİR AMACA HİZMET EDER:
+     Her Python modülü ve C++ kaynak dosyası tek ve iyi tanımlanmış bir sorumluluk alanına sahiptir.
+     İş mantığı, optik geometri, donanım telemetrisi ve görselleştirme asla aynı dosyada karıştırılamaz.
+
+1.2. GİRDİSİ VE ÇIKTISI KESİNLİKLE BELLİDİR:
+     Her modülün, sınıfın ve fonksiyonun girdisi, çıktısı ve veri tipi dondurulmuş sözleşmedir:
+     - Tüm fonksiyon ve metotlarda tip ipuçları (type hints) ZORUNLUDUR (`mypy --strict` uyumlu).
+     - Her dosyanın başında ve ana fonksiyonlarında `Args`, `Returns` ve `Raises` bölümlerini
+       içeren Google/NumPy stili docstring bulunmak zorundadır.
+     - Giriş verisi doğrulanmadan (validation) iş mantığına aktarılamaz.
+
+1.3. İŞ MANTIĞI VE GÖRSELLEŞTİRME KESİN AYRIMI:
+     - `cv2.imshow`, `cv2.waitKey` gibi GUI çağrıları YALNIZCA `src/vehicle_speed/visualization.py`
+       içinde yer alabilir.
+     - Algoritma, geometri ve filtreleme modüllerinde (`geometry.py`, `tracking.py`, `filters/`)
+       asla GUI veya ekran bağımlılığı bulunamaz. CI ortamında GUI olmadan koşulabilmelidir.
+
+---
+
+## 2. FİZİKSEL VE OPTİK DEĞİŞMEZLER (INVARIANTS)
+
+2.1. PINHOLE DERİNLİK DEĞİŞMEZİ:
+     Monoküler kamera derinlik kestiriminde pinhole kamera modeli esastır:
+     $Z = \frac{f \cdot W_{real}}{w_{pixel}}$
+     - $w_{pixel} \le 0$ durumunda derinlik TANIMSIZDIR. Sessizce varsayılan bir değer atanamaz.
+     - Derinlik hatası mesafenin karesiyle ($Z^2$) orantılı yayılır: $\sigma_Z \propto Z^2 \cdot \sigma_w$.
+     - Testler bu $Z^2$ hata yayılımını doğrulamak zorundadır.
+
+2.2. HIZ VE ZAMAN DEĞİŞMEZİ:
+     Hız, iki ardışık tespit arasındaki 3B Öklid mesafesinin zamana oranıdır:
+     $v = \frac{\Delta d}{\Delta t}$
+     - $\Delta t \le 0$ (aynı kare veya saat geri kayması) durumunda hız HESAPLANAMAZ, hata fırlatılır.
+     - Maksimum hız fiziksel sınır kontrolünden (sanity check, örn: $v > 300\text{ km/h}$) geçmelidir.
+
+2.3. SIFIR-VARSAYIM VE FAIL-CLOSED PRENSİBİ:
+     - Eksik kalibrasyon, kayıp kutu veya tanımsız matris durumunda sistem sessizce "uydurma değer" atayamaz.
+     - Hata durumunda Fail-Closed yaklaşımıyla explicit Exception (`CalibrationError`, `TrackingError`, vb.) fırlatılmalıdır.
+
+---
+
+## 3. TELEMETRİ VE DONANIM SÖZLEŞMESİ (GROUND TRUTH)
+
+3.1. ESP32 TELEMETRİ PROTOKOLÜ SABİTTİR:
+     ESP32 vidalı mil sürücüsünden seri port üzerinden akan JSON mesajları şu 4 olay tipine uymak zorundadır:
+     - `startup`: `{"event": "startup", "message": str, "max_speed": int}`
+     - `direction_change`: `{"event": "direction_change", "new_target_steps": int, "new_max_speed": int, "acceleration": int}`
+     - `status`: `{"event": "status", "elapsed_time_ms": int, "current_position": int}`
+     - `complete`: `{"event": "complete", "message": str}`
+     Herhangi bir alanın adı veya veri tipi tek taraflı değiştirilemez.
+
+3.2. ÇAPRAZ SENKRONİZASYON:
+     Donanım telemetrisi (`main.cpp` / `telemetry_protocol.h`) ile Python seri ayrıştırıcısı
+     (`protocol.py`) arasındaki sabitler (steps/mm, baud rate, JSON şeması) birim testleriyle
+     kilitlenir.
+
+---
+
+## 4. GÜVENLİK, SIR KORUMASI VE DEPO HİJYENİ
+
+4.1. SIR VE KİMLİK BİLGİSİ YASAKTIR:
+     Koda, konfigürasyona veya commit mesajına hiçbir gizli anahtar, port parolası,
+     özel sistem yolu (`/home/user/...`) SABİT KODLANAMAZ. Yollar `Path(__file__)` veya CLI argümanı olmalıdır.
+
+4.2. İKİLİ DOSYA VE AĞIR VERİ YASAĞI:
+     - Depoya 5 MB'tan büyük hiçbir dosya commit EDİLEMEZ.
+     - Model ağırlıkları (`*.pt`, `*.onnx`, `*.pth`), video dosyaları (`*.mp4`, `*.mkv`, `*.avi`),
+       ham veri setleri (`data/raw/`), firmware derleme çıktıları (`.pio/`, `*.elf`, `*.map`)
+       ve eski çalışma dizinleri (`eski/`, `archive/`, `Yapay zeka/`) depoya GİREMEZ.
+     - `.gitignore` kuralları ihlal edilemez.
+
+---
+
+## 5. KALİTE KAPILARI VE SIFIR-REGRESYON MANDALI
+
+5.1. SIFIR LİNT VE BİÇİMLENDİRME HATASI:
+     - Python: `ruff check .` ve `ruff format --check .` sıfır hata vermek zorundadır.
+     - C++: `clang-format --dry-run --Werror` temiz olmak zorundadır.
+
+5.2. SIKI TİP GÜVENLİĞİ:
+     - Python: `mypy` strict modda çalıştırılır; `Any` tipi kontrolsüz yayılamaz.
+
+5.3. TEST KAPSAMI:
+     - Birim test kapsamı (test coverage) en az **%85** olmak zorundadır.
+     - Test suite çalıştırıldığında tüm testler yeşil olmak zorundadır.
+
+---
+
+## 6. SÜRÜM KONTROLÜ VE COMMİT PROTOKOLÜ
+
+6.1. DÜZENLİ VE ANLAMLI COMMİT'LER:
+     - Commit'ler atomik, odaklanmış ve Conventional Commits standardına uygun olmalıdır:
+       - `feat:` Yeni bir özellik/modül eklendiğinde
+       - `fix:` Bir hata düzeltildiğinde
+       - `refactor:` Davranış değişmeden kod yapısı iyileştirildiğinde
+       - `style:` Kod biçimlendirme (ruff format, clang-format)
+       - `test:` Test eklendiğinde veya güncellendiğinde
+       - `docs:` Dokümantasyon değişikliklerinde
+       - `chore:` Yapılandırma, CI/CD, paket bağımlılıkları ve repo altyapısı
+6.2. BİÇİMLENDİRME İLE DAVRANIŞ DEĞİŞİKLİĞİ AYRI COMMİT OLMALIDIR:
+     Refactoring/özellik commit'i ile linter/format düzeltmesi ASLA aynı commit'e karıştırılamaz.
