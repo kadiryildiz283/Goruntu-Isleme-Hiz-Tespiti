@@ -1,0 +1,19 @@
+name: Özellik / Araştırma Önerisi (Feature Request)
+description: Yeni bir algoritma, filtre veya telemetri özelliği önerin
+title: "[FEAT] "
+labels: ["type/feature", "status/triage"]
+body:
+  - type: textarea
+    id: problem
+    attributes:
+      label: Çözülecek Problem / İhtiyaç
+      description: Hangi eksikliği giderecek veya hangi performansı artıracak?
+    validations:
+      required: true
+  - type: textarea
+    id: solution
+    attributes:
+      label: Önerilen Çözüm
+      description: Düşündüğünüz mimari, formülasyon veya algoritma yaklaşımı.
+    validations:
+      required: true

@@ -1,0 +1,8 @@
+blank_issues_enabled: false
+contact_links:
+  - name: Güvenlik Açığı Bildirimi
+    url: https://github.com/kadiryildiz283/Goruntu-Isleme-Hiz-Tespiti/security/advisories/new
+    about: "Güvenlik açıklarını lütfen herkese açık issue yerine bu bağlantıdan bildirin."
+  - name: Donanım ve Kurulum Soruları
+    url: https://github.com/kadiryildiz283/Goruntu-Isleme-Hiz-Tespiti/blob/main/docs/hardware_setup.md
+    about: "ESP32 + TMC2208 vidalı mil kurulum rehberi"

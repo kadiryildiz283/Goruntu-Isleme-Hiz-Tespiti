@@ -1,0 +1,28 @@
+cff-version: 1.2.0
+message: "Bu yazılımı akademik veya endüstriyel çalışmalarınızda kullanıyorsanız lütfen aşağıdaki makale ve yazılım atfını ekleyiniz."
+title: "Physics-Informed Hybrid Vehicle Speed Estimation with Neural Residual Calibration"
+type: software
+license: AGPL-3.0-or-later
+repository-code: "https://github.com/kadiryildiz283/Goruntu-Isleme-Hiz-Tespiti"
+version: 0.1.0
+date-released: "2026-10-13"
+keywords:
+  - vehicle-speed-estimation
+  - pinhole-camera-model
+  - optical-geometry
+  - kalman-filter
+  - neural-residual-calibration
+  - esp32
+  - yolo
+authors:
+  - family-names: "Yıldız"
+    given-names: "Kadir"
+    affiliation: "Araştırmacı & Geliştirici"
+preferred-citation:
+  type: article
+  title: "Physics-Informed Monocular Vehicle Speed Estimation using Keypoint Geometry and Stepper Telemetry Ground Truth"
+  authors:
+    - family-names: "Yıldız"
+      given-names: "Kadir"
+  year: 2026
+  notes: "Makale değerlendirme aşamasındadır. Kabul sonrası DOI ve dergi bilgisi güncellenecektir."

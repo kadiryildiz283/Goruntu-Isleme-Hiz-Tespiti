@@ -1,0 +1,37 @@
+name: Hata Bildirimi (Bug Report)
+description: Beklenmeyen bir çalışma veya algoritma hatası bildirin
+title: "[BUG] "
+labels: ["type/bug", "status/triage"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Lütfen bildirmeden önce mevcut açık issue'ları kontrol edin.
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: Ne oldu?
+      description: Gözlemlediğiniz hatayı somut olarak açıklayın.
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: Beklenen davranış neydi?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduction
+    attributes:
+      label: Yeniden Üretme Adımları
+      description: Hatayı oluşturan komutlar veya kod bloğu.
+      render: bash
+    validations:
+      required: true
+  - type: textarea
+    id: traceback
+    attributes:
+      label: Hata Çıktısı / Traceback
+      render: text
+    validations:
+      required: true
