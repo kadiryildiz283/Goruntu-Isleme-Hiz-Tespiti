@@ -16,6 +16,8 @@ def test_build_parser_defaults() -> None:
     assert args.mode == "ball"
     assert args.real_width is None
     assert args.hfov == DEFAULT_HFOV_DEG
+    assert args.filter == "none"
+    assert args.nrc_weights is None
     assert args.headless is False
     assert args.max_frames is None
 
@@ -33,6 +35,10 @@ def test_build_parser_custom_args() -> None:
             "0.52",
             "--hfov",
             "78.5",
+            "--filter",
+            "kalman",
+            "--nrc-weights",
+            "models/nrc_mlp.npz",
             "--headless",
             "--max-frames",
             "100",
@@ -42,5 +48,7 @@ def test_build_parser_custom_args() -> None:
     assert args.mode == "plate"
     assert args.real_width == 0.52
     assert args.hfov == 78.5
+    assert args.filter == "kalman"
+    assert args.nrc_weights == Path("models/nrc_mlp.npz")
     assert args.headless is True
     assert args.max_frames == 100
