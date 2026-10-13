@@ -46,6 +46,18 @@ def test_ground_truth_speed_empty_on_single_event() -> None:
     assert ground_truth_speed([e1]) == []
 
 
+def test_ground_truth_speed_skips_non_positive_dt() -> None:
+    """Zaman damgası ilerlemeyen veya geriye giden olaylar atlanmalıdır."""
+    e1 = StatusEvent(event="status", elapsed_time_ms=1000, current_position=100)
+    e2 = StatusEvent(event="status", elapsed_time_ms=1000, current_position=200)  # delta_t == 0
+    e3 = StatusEvent(event="status", elapsed_time_ms=2000, current_position=600)
+    profile = ground_truth_speed([e1, e2, e3])
+    # e1 -> e2 atlanır (dt=0), e2 -> e3 işlenir (dt=1.0s)
+    assert len(profile) == 1
+    t_s, _ = profile[0]
+    assert t_s == pytest.approx(2.0)
+
+
 def test_check_travel_boundary() -> None:
     """Vidalı mil 500 mm sınır kontrolü."""
     # 500 mm * 400 = 200.000 adım azami
