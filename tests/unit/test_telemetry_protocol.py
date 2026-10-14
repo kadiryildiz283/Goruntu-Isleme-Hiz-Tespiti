@@ -1,4 +1,6 @@
-"""Unit tests for vehicle_speed.telemetry.protocol parser."""
+import json
+
+import pytest
 
 from vehicle_speed.telemetry.protocol import (
     CompleteEvent,
@@ -58,3 +60,9 @@ def test_parse_malformed_json_returns_none() -> None:
     assert parse_line('{"event": "unknown_type"}') is None
     assert parse_line("sadece duz yazi") is None
     assert parse_line('{"event": "status", "elapsed_time_ms": "not_an_int"}') is None
+
+
+def test_parse_line_non_dict_payload(monkeypatch: pytest.MonkeyPatch) -> None:
+    """JSON ayrıştırıcı sözlük harici bir nesne döndürdüğünde None dönmelidir."""
+    monkeypatch.setattr(json, "loads", lambda _: ["not", "a", "dict"])
+    assert parse_line('{"event": "test"}') is None

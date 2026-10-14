@@ -1,5 +1,7 @@
-"""Filtering and noise reduction algorithms (PLANLANIYOR)."""
+"""Spatial trajectory and motion filtering algorithms."""
 
 from typing import Final
 
-__all__: Final[list[str]] = []
+from vehicle_speed.filters.kalman import KalmanFilter3D
+
+__all__: Final[list[str]] = ["KalmanFilter3D"]

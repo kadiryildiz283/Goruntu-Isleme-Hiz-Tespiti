@@ -20,8 +20,8 @@ from vehicle_speed.config import (
     DEFAULT_PLATE_WIDTH_M,
 )
 from vehicle_speed.detector import ObjectDetector
-from vehicle_speed.geometry import estimate_depth, project_3d
-from vehicle_speed.tracking import SpeedTracker
+from vehicle_speed.nrc.model import NeuralResidualCalibrator
+from vehicle_speed.pipeline import SpeedEstimationPipeline
 from vehicle_speed.visualization import close_all_windows, draw_detection_overlay, show_frame
 
 logger = logging.getLogger(__name__)
@@ -62,6 +62,18 @@ def build_parser() -> argparse.ArgumentParser:
         type=float,
         default=DEFAULT_HFOV_DEG,
         help=f"Kamera yatay görüş açısı (derece, varsayılan: {DEFAULT_HFOV_DEG})",
+    )
+    parser.add_argument(
+        "--filter",
+        choices=["none", "kalman"],
+        default="none",
+        help="Yörünge gürültü filtreleme modu: 'none' veya 'kalman' (varsayılan: none)",
+    )
+    parser.add_argument(
+        "--nrc-weights",
+        type=Path,
+        default=None,
+        help="NRC (Neural Residual Calibrator) model ağırlıkları (.npz dosya yolu)",
     )
     parser.add_argument(
         "--headless",
@@ -115,16 +127,27 @@ def run_pipeline(args: argparse.Namespace) -> int:
         source="datasheet",
     )
 
+    nrc_calibrator: NeuralResidualCalibrator | None = None
+    if args.nrc_weights is not None:
+        nrc_calibrator = NeuralResidualCalibrator(weights_path=args.nrc_weights)
+
     detector = ObjectDetector(model_path=args.weights, mode=args.mode)
-    tracker = SpeedTracker()
+    pipeline = SpeedEstimationPipeline(
+        intrinsics=intrinsics,
+        real_width_m=real_width_m,
+        filter_mode=args.filter,
+        nrc_calibrator=nrc_calibrator,
+    )
 
     logger.info(
-        "Boru hattı başlatıldı: %dx%d @ %.1f FPS | f=%.1f px | Hedef W=%.3f m",
+        "Boru hattı başlatıldı: %dx%d @ %.1f FPS | f=%.1f px | Hedef W=%.3f m | Filtre=%s | NRC=%s",
         width,
         height,
         fps,
         intrinsics.f_px,
         real_width_m,
+        args.filter,
+        bool(nrc_calibrator),
     )
 
     frame_idx = 0
@@ -144,32 +167,16 @@ def run_pipeline(args: argparse.Namespace) -> int:
             speeds: dict[int, float] = {}
 
             for det in detections:
-                if det.pixel_width <= 0:
+                if det.track_id is None or det.pixel_width <= 0:
                     continue
 
                 try:
-                    # 1. Pinhole ile derinlik kestirimi (Z)
-                    z_m = estimate_depth(
-                        f_px=intrinsics.f_px,
-                        real_width_m=real_width_m,
-                        pixel_width_px=det.pixel_width,
+                    speed_ms = pipeline.process_detection(
+                        det=det,
+                        frame_index=frame_idx,
+                        fps=fps,
                     )
-                    # 2. 3B kamera koordinatına izdüşüm
-                    pos_3d = project_3d(
-                        px_x=det.center_px[0],
-                        px_y=det.center_px[1],
-                        z_m=z_m,
-                        f_px=intrinsics.f_px,
-                        optical_center=intrinsics.optical_center_px,
-                    )
-                    # 3. Hız türetimi
-                    if det.track_id is not None:
-                        speed_ms = tracker.update(
-                            track_id=det.track_id,
-                            position_m=pos_3d,
-                            frame_index=frame_idx,
-                            fps=fps,
-                        )
+                    if speed_ms is not None:
                         speeds[det.track_id] = speed_ms
                 except ValueError as err:
                     logger.debug("Hesaplama atlandı (ID=%s): %s", det.track_id, err)
@@ -177,7 +184,7 @@ def run_pipeline(args: argparse.Namespace) -> int:
 
             # Periyodik bellek temizliği
             if frame_idx % 60 == 0:
-                tracker.prune(current_frame_index=frame_idx)
+                pipeline.prune(current_frame_index=frame_idx)
 
             if not args.headless:
                 elapsed = time.time() - start_time

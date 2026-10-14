@@ -54,6 +54,15 @@ def test_math_interval_caching() -> None:
     assert v_frame7 == v_frame5
 
 
+def test_tracker_zero_delta_t_preserves_speed() -> None:
+    """Aynı kare indeksinde art arda çağrıldığında sıfıra bölme engellenir."""
+    tracker = SpeedTracker(math_interval=0)
+    tracker.update(1, (0.0, 0.0, 10.0), frame_index=1, fps=30.0)
+    # Aynı kare içinde tekrar çağrılırsa delta_t <= 0 olur ve önceki hız döner
+    v = tracker.update(1, (0.0, 0.0, 9.0), frame_index=1, fps=30.0)
+    assert v == 0.0
+
+
 def test_prune_removes_stale_tracks_and_returns_count() -> None:
     """Belirli kare sayısı boyunca güncellenmeyen izler temizlenir ve silinen adet döner."""
     tracker = SpeedTracker()

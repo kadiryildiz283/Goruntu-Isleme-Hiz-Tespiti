@@ -1,0 +1,11 @@
+{"event": "startup", "message": "5 dakikalik test basladi", "max_speed": 1000.0}
+{"event": "status", "elapsed_time_ms": 1000, "current_position": 2500}
+{"event": "status", "elapsed_time_ms": 2000, "current_position": 6000}
+{"event": "status", "elapsed_time_ms": 3000, "current_position": 10000}
+{"event": "status", "elapsed_time_ms": 4000, "current_position": 14500}
+{"event": "status", "elapsed_time_ms": 5000, "current_position": 19000}
+{"event": "direction_change", "new_target_steps": 200000, "new_max_speed": 1200.0, "acceleration": 600.0}
+{"event": "status", "elapsed_time_ms": 6000, "current_position": 24000}
+{"event": "status", "elapsed_time_ms": 7000, "current_position": 29500}
+{"event": "status", "elapsed_time_ms": 8000, "current_position": 35000}
+{"event": "complete", "message": "300000ms doldu. Motor durduruldu."}
