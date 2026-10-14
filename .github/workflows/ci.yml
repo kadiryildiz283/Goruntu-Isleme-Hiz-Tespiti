@@ -61,7 +61,7 @@ jobs:
           key: mypy-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'uv.lock') }}
 
       - name: Run mypy
-        run: uv run mypy
+        run: uv run --extra dev mypy
 
   firmware-format:
     name: Firmware Clang-Format
@@ -82,6 +82,8 @@ jobs:
       fail-fast: false
       matrix:
         python-version: ["3.10", "3.11", "3.12"]
+    env:
+      UV_PYTHON: ${{ matrix.python-version }}
     steps:
       - uses: actions/checkout@v4
 
@@ -90,7 +92,8 @@ jobs:
         with:
           python-version: ${{ matrix.python-version }}
 
-      - uses: astral-sh/setup-uv@v3
+      - name: astral-sh/setup-uv@v3
+        uses: astral-sh/setup-uv@v3
         with:
           enable-cache: true
           cache-suffix: ${{ matrix.python-version }}
@@ -99,11 +102,11 @@ jobs:
         run: uv sync --extra dev --python ${{ matrix.python-version }}
 
       - name: Run pytest with coverage
-        run: uv run pytest -v --cov=vehicle_speed --cov-report=xml --cov-report=term-missing
+        run: uv run --extra dev pytest -v --cov=vehicle_speed --cov-report=xml --cov-report=term-missing
 
       - name: Enforce coverage threshold >= 85%
         if: matrix.python-version == '3.12'
-        run: uv run coverage report --fail-under=85
+        run: uv run --extra dev coverage report --fail-under=85
 
       - name: Upload coverage artifact
         if: matrix.python-version == '3.12'
