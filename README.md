@@ -21,12 +21,16 @@ src/vehicle_speed/
 ├── tracking.py           # Nesne izleme, yörünge ve 3B hız türetimi
 ├── calibration.py        # Kamera kalibrasyonu ve ölçek referansları
 ├── detector.py           # YOLO tabanlı tespit motoru (Soyutlanmış & Fail-Closed)
+├── pipeline.py           # Uçtan uca 3B hız kestirim ve ablasyon boru hattı
 ├── telemetry/            # ESP32 donanım telemetrisi ve yer gerçeği (Ground Truth)
 │   ├── protocol.py       # ESP32 JSON telemetri şeması ve olay ayrıştırma
 │   ├── ground_truth.py   # Adım (step) -> Milimetre -> m/s hız hesaplama
 │   └── serial_reader.py  # Parametrik, güvenli seri port okuyucusu
-├── filters/              # Kalman ve gürültü filtreleme modülleri (Planlanıyor)
-├── nrc/                  # Nöral Artık Kalibratör (NRC) (Planlanıyor)
+├── filters/              # Durum kestirimi ve gürültü sönümleme
+│   └── kalman.py         # 6 durumlu 3B Sabit Hızlı Kalman Filtresi (Joseph formlu)
+├── nrc/                  # 5 Girdili Nöral Artık Kalibratör (Neural Residual Calibrator)
+│   ├── features.py       # [v_raw, w_px, y_norm, AR, conf] öznitelik çıkarımı
+│   └── model.py          # Sıfır bağımlılıklı ultra hafif MLP çıkarım motoru
 ├── visualization.py      # OpenCV ekran ve görselleştirme katmanı (GUI izole)
 └── cli.py                # Komut satırı çalıştırma arayüzü
 ```
@@ -40,7 +44,7 @@ src/vehicle_speed/
 * Python `>=3.10` (Önerilen: `3.12`)
 * [uv](https://github.com/astral-sh/uv) paket yöneticisi
 
-### Kurulum
+### Kurulum ve Doğrulama
 
 ```bash
 # Bağımlılıkları ve geliştirici araçlarını yükleyin
@@ -50,13 +54,27 @@ uv sync --extra dev
 uv run ruff check .
 uv run mypy
 
-# Testleri koşun
-uv run pytest
+# Testleri koşun (%85+ kapsam zorunluluğu)
+uv run pytest --cov
+```
+
+### Kullanım Örnekleri
+
+```bash
+# 3B Kalman filtresi ve Nöral Artık Kalibratör (NRC) ile hız tahmini
+uv run vehicle-speed --source video.mp4 --mode ball --filter kalman --nrc --no-gui
+
+# ESP32 seri port telemetrisi kaydı
+uv run vehicle-speed --listen-serial --serial-port /dev/ttyUSB0 --telemetry-out telemetry.jsonl
+
+# Video ve ESP32 telemetrisini eşleştirerek NRC eğitim veri seti üretimi
+uv run python scripts/collect_dataset.py --video video.mp4 --telemetry telemetry.jsonl --output data/nrc_dataset.npz
 ```
 
 ---
 
-## 📜 Mühendislik Sözleşmesi
+## 📜 Mühendislik Sözleşmesi ve Dokümantasyon
 
 Bu depoda çalışan tüm katkıcılar ve otomasyonlar [.coderules](.coderules) belgesine uymakla yükümlüdür.
-Detaylı altyapı raporları [docs/infrastructure/](docs/infrastructure/README.md) dizininde yer almaktadır.
+* Kurumsal altyapı raporları: [docs/infrastructure/](docs/infrastructure/README.md)
+* Q2 makale ve hakem değerlendirme notu: [docs/Q2_MAKALE_HAKEM_DEGERLENDIRMESI.md](docs/Q2_MAKALE_HAKEM_DEGERLENDIRMESI.md)
